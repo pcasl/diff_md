@@ -58,7 +58,26 @@ def create_diff(old, new):
         emit(new[start:end], kind)
 
     matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
-    for operation, a, b, c, d in matcher.get_opcodes():
+    opcodes = matcher.get_opcodes()
+    merged = []
+    index = 0
+    while index < len(opcodes):
+        operation, a, b, c, d = opcodes[index]
+        if operation != "equal":
+            # Include shared spaces between consecutive changes in both spans.
+            while index + 2 < len(opcodes):
+                gap, ga, gb, _, _ = opcodes[index + 1]
+                following, _, nb, _, nd = opcodes[index + 2]
+                if (gap != "equal" or following == "equal"
+                        or not re.fullmatch(r"[^\S\r\n]+", "".join(old_tokens[ga:gb]))):
+                    break
+                b, d = nb, nd
+                index += 2
+            operation = "replace" if a < b and c < d else operation
+        merged.append((operation, a, b, c, d))
+        index += 1
+
+    for operation, a, b, c, d in merged:
         if operation in {"delete", "replace"}:
             emit("".join(old_tokens[a:b]), "delete")
         emit_new(c, d, "insert" if operation == "replace" else operation)
